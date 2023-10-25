@@ -1,149 +1,174 @@
-import asyncio
-import json
-import logging
+from weaviate import Client
 import pandas as pd
 import pennylane as qml
-import numpy as np
-from weaviate import Client
-from llama_cpp import Llama
+from pennylane import numpy as np
+import asyncio
+import torch
+import logging
+from concurrent.futures import ThreadPoolExecutor
+import matplotlib.pyplot as plt
+import seaborn as sns  # For enhanced visualizations
+import csv
 
 # Initialize logging
 logging.basicConfig(level=logging.DEBUG)
 
-# Initialize Weaviate client
-client = Client("http://localhost:8080")
-
-# Initialize Llama2 model
+# Initialize Llama
 llm = Llama(
     model_path="llama-2-7b-chat.ggmlv3.q8_0.bin",
     n_gpu_layers=-1,
     n_ctx=3900,
 )
 
-# Initialize PennyLane
-dev = qml.device("default.qubit", wires=2)
+# Initialize Weaviate client
+weaviate_client = Client("http://localhost:8080")
 
-# Function to encode data quantumly
+# Initialize PennyLane device
+dev = qml.device("default.qubit", wires=8)
+
 @qml.qnode(dev)
-def quantum_encode(emotional_factor, tactical_factor):
-    qml.RY(emotional_factor, wires=0)
-    qml.RX(tactical_factor, wires=1)
-    qml.CNOT(wires=[0, 1])
-    return qml.probs(wires=[0, 1])
+def quantum_encode(weights, features):
+    # Error checks (as before)
+    if len(features) != 8:
+        raise ValueError("The features array should have 8 elements.")
+    if weights.shape != (3, 8, 3):
+        raise ValueError("The weights array should have the shape (3, 8, 3).")
 
-# Function to generate a quantum prediction score
-@qml.qnode(dev)
-def quantum_prediction(emotional_factor, tactical_factor):
-    qml.RY(emotional_factor, wires=0)
-    qml.RX(tactical_factor, wires=1)
-    qml.CNOT(wires=[0, 1])
-    return qml.expval(qml.PauliZ(0))
+    # Feature encoding using RY gates
+    for i, feature in enumerate(features):
+        qml.RY(feature, wires=i)
 
-# Function to convert quantum prediction score to a vector
-def quantum_score_to_vector(quantum_score):
-    return np.array([quantum_score, 1 - quantum_score])
+    # Strongly Entangling Layers (you can keep or remove this)
+    qml.StronglyEntanglingLayers(weights, wires=range(8))
 
-# Function to decode quantum-encoded data
-@qml.qnode(dev)
-def quantum_decode(state_vector):
-    qml.QubitStateVector(state_vector, wires=[0, 1])
-    return qml.expval(qml.PauliZ(0)), qml.expval(qml.PauliZ(1))
+    # Custom Pairwise Entanglement
+    for i in range(0, 7, 2):
+        qml.CNOT(wires=[i, i + 1])
+        qml.PauliY(wires=i + 1)
+        qml.CNOT(wires=[i, i + 1])
 
-# Base Agent class
+    # Custom Circular Entanglement
+    for i in range(8):
+        qml.CZ(wires=[i, (i + 1) % 8])
+
+    return qml.probs(wires=range(8))
+
+# Function to save coach reports to CSV
+def save_to_csv(data, filename):
+    with open(filename, 'w', newline='') as csvfile:
+        fieldnames = ['game_index', 'coach_report']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for key, value in data.items():
+            writer.writerow({'game_index': key, 'coach_report': value})
+
+# Base Agent Class
 class BaseAgent:
-    def __init__(self, prompts):
-        self.prompts = prompts
-
-    async def analyze_data(self, data, shared_data, num_loops):
-        for i in range(num_loops):
-            for prompt in self.prompts:
-                try:
-                    weaviate_data = client.query().do()
-                except Exception as e:
-                    logging.error(f"Failed to query data from Weaviate: {e}")
-                    continue
-
-                # Extract emotional and tactical factors from data
-                emotional_factor = data['preSnapHomeTeamWinProbability'].iloc[0]
-                tactical_factor = data['expectedPoints'].iloc[0]
-
-                # Quantum encode the data
-                quantum_result = quantum_encode(emotional_factor, tactical_factor)
-
-                # Generate a quantum prediction score
-                quantum_pred_score = quantum_prediction(emotional_factor, tactical_factor)
-
-                # Convert quantum prediction score to a vector
-                quantum_vector = quantum_score_to_vector(quantum_pred_score)
-
-                # Decode the quantum-encoded data
-                decoded_data = quantum_decode(quantum_result)
-
-                # Include the quantum vector and decoded data in the context for Llama2
-                analysis_input = f"{prompt}\nQuantum Prediction Vector: {quantum_vector}\nDecoded Data: {decoded_data}\n{json.dumps(weaviate_data)}\n{json.dumps(shared_data)}"
-                analysis_result = llm(analysis_input, max_tokens=200)['choices'][0]['text']
-                shared_data[prompt] = analysis_result
-
-                try:
-                    client.data_object.create({
-                        "class": "NFL_Analysis",
-                        "properties": {
-                            "prompt": prompt,
-                            "result": analysis_result,
-                            "quantumData": json.dumps(quantum_result.tolist()),
-                            "quantumPredictionVector": json.dumps(quantum_vector.tolist()),
-                            "decodedData": json.dumps(decoded_data.tolist())
-                        }
-                    })
-
-                    # Save Llama2 output to a .txt file
-                    with open(f"{prompt.replace(' ', '_')}_{i}.txt", "w") as f:
-                        f.write(analysis_result)
-
-                except Exception as e:
-                    logging.error(f"Failed to store data in Weaviate: {e}")
-
-# Agents with specific prompts and roles
-class Agent1(BaseAgent):
     def __init__(self):
-        super().__init__([
-            "1. Inspect the NFL dataset and identify key metrics related to tackling.",
-            "2. Highlight any anomalies or outliers in the tackling data.",
-            "3. Summarize the overall tackling performance in the dataset."
-        ])
+        self.prompts = [
+            "Load specialized data and validate its integrity.",
+            "Preprocess the data to eliminate inconsistencies and outliers.",
+            "Conduct a statistical analysis to understand the data distribution.",
+            "Utilize quantum encoding to transform relevant features.",
+            "Integrate key insights into the shared data repository.",
+            "Log the data analysis progress and prepare for the next iteration."
+        ]
 
-class Agent2(BaseAgent):
-    def __init__(self):
-        super().__init__([
-            "1. Based on {Agent1} findings, identify patterns in effective tackling techniques.",
-            "2. Use the key metrics from {Agent1} to predict tackling success rates.",
-            "3. Suggest defensive formations based on {Agent1}'s top tackling techniques."
-        ])
+    async def analyze_data(self, data, shared_data, iteration):
+        pass
 
-class Agent3(BaseAgent):
+# Game Agent Class
+class GameAgent(BaseAgent):
     def __init__(self):
-        super().__init__([
-            "1. Summarize the findings from {Agent1} and {Agent2} into a cohesive analysis.",
-            "2. Propose machine learning models that could leverage these findings for future predictions.",
-            "3. Draft the abstract of a science paper based on the findings from {Agent1} and {Agent2}."
-        ])
+        super().__init__()
+        self.prompts.append("Correlate game outcomes with other datasets for a holistic analysis.")
+
+    async def analyze_data(self, game_data, shared_data, iteration):
+        coach_reports = {}
+        weights = np.random.random((3, 8, 3))
+        for index, row in game_data.iterrows():
+            features = [
+                row['homeFinalScore'],
+                row['visitorFinalScore'],
+                row['weatherCondition'],
+                row['crowdNoise'],
+                row['playerInjuryStatus'],
+                row['homeTeamMorale'],
+                row['visitorTeamMorale'],
+                row['refereeBias']
+            ]
+            quantum_probs = quantum_encode(weights, features)
+            shared_data[f'game_{index}_quantum_probs'] = quantum_probs.tolist()
+
+            next_prompt_index = np.argmax(quantum_probs)
+            next_prompt = self.prompts[next_prompt_index % len(self.prompts)]
+
+            # Fetch shared insights from Weaviate
+            shared_insights = weaviate_client.query.get('SharedInsights')
+
+            # Enhanced Llama Prompts
+            llama_prompts = [
+                f"Generate a comprehensive coach report focusing on {next_prompt.lower()} with insights.",
+                f"Provide tactical advice based on {next_prompt.lower()} and shared insights.",
+                f"Analyze player performance focusing on {next_prompt.lower()} and shared data.",
+                f"Offer strategic game changes considering {next_prompt.lower()} and quantum probabilities.",
+                f"Summarize the game's key moments focusing on {next_prompt.lower()} and shared insights."
+            ]
+
+            for prompt in llama_prompts:
+                coach_prompt = f"{prompt} " \
+                               f"Consider the following shared insights: {shared_insights}. " \
+                               f"Also, take into account the quantum probabilities: {quantum_probs.tolist()}."
+                
+                coach_report = llm.generate(coach_prompt)
+                coach_reports[f'game_{index}_{prompt}'] = coach_report
+
+                # Enhanced Data Visualizations
+                plt.figure(figsize=(10, 6))
+                sns.set(style="whitegrid")
+                colors = sns.color_palette("coolwarm", len(quantum_probs))
+
+                bars = plt.bar(range(len(quantum_probs)), quantum_probs, color=colors)
+                plt.title(f"Quantum Probabilities for {prompt}", fontsize=16)
+                plt.xlabel('Quantum States', fontsize=14)
+                plt.ylabel('Probabilities', fontsize=14)
+
+                # Adding annotations
+                for bar, prob in zip(bars, quantum_probs):
+                    plt.text(bar.get_x() + bar.get_width() / 2 - 0.1,
+                             bar.get_height() - 0.02,
+                             f'{prob:.2f}',
+                             fontsize=12,
+                             color='white')
+
+                plt.savefig(f"Enhanced_Quantum_Probabilities_{index}_{prompt}.png")
+
+            print(f"Generated Coach Reports: {coach_reports}")
+
+            # Save coach reports to CSV
+            save_to_csv(coach_reports, 'coach_reports.csv')
 
 # Main function to run the program
 async def main():
-    num_loops = 15  # Number of loops for continuous learning, can be configured
+    game_data = pd.read_csv("game_data.csv")
+    scoring_data = pd.read_csv("your_scoring_data.csv")
+    tackling_data = pd.read_csv("your_tackling_data.csv")
+    
     shared_data = {}
-    agent1 = Agent1()
-    agent2 = Agent2()
-    agent3 = Agent3()
+    
+    game_agent = GameAgent()
+    scoring_agent = GameAgent()
+    tackling_agent = GameAgent()
+    
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        loop = asyncio.get_event_loop()
+        await asyncio.gather(
+            loop.run_in_executor(executor, game_agent.analyze_data, game_data, shared_data, 0),
+            loop.run_in_executor(executor, scoring_agent.analyze_data, scoring_data, shared_data, 1),
+            loop.run_in_executor(executor, tackling_agent.analyze_data, tackling_data, shared_data, 2)
+        )
+    
+    print("Quantum Probabilities for Game Data:", shared_data)
 
-    # Load your CSV data here
-    tackling_data = pd.read_csv("tackling_data.csv")
-
-    await agent1.analyze_data(tackling_data, shared_data, num_loops)
-    await agent2.analyze_data(tackling_data, shared_data, num_loops)
-    await agent3.analyze_data(tackling_data, shared_data, num_loops)
-
-# Run the main function
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    asyncio.run(main())
