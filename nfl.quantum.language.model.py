@@ -3,6 +3,7 @@ import json
 import logging
 import pandas as pd
 import pennylane as qml
+import numpy as np
 from weaviate import Client
 from llama_cpp import Llama
 
@@ -38,6 +39,16 @@ def quantum_prediction(emotional_factor, tactical_factor):
     qml.CNOT(wires=[0, 1])
     return qml.expval(qml.PauliZ(0))
 
+# Function to convert quantum prediction score to a vector
+def quantum_score_to_vector(quantum_score):
+    return np.array([quantum_score, 1 - quantum_score])
+
+# Function to decode quantum-encoded data
+@qml.qnode(dev)
+def quantum_decode(state_vector):
+    qml.QubitStateVector(state_vector, wires=[0, 1])
+    return qml.expval(qml.PauliZ(0)), qml.expval(qml.PauliZ(1))
+
 # Base Agent class
 class BaseAgent:
     def __init__(self, prompts):
@@ -62,8 +73,14 @@ class BaseAgent:
                 # Generate a quantum prediction score
                 quantum_pred_score = quantum_prediction(emotional_factor, tactical_factor)
 
-                # Include the quantum prediction score in the context for Llama2
-                analysis_input = f"{prompt}\nQuantum Prediction Score: {quantum_pred_score}\n{json.dumps(weaviate_data)}\n{json.dumps(shared_data)}"
+                # Convert quantum prediction score to a vector
+                quantum_vector = quantum_score_to_vector(quantum_pred_score)
+
+                # Decode the quantum-encoded data
+                decoded_data = quantum_decode(quantum_result)
+
+                # Include the quantum vector and decoded data in the context for Llama2
+                analysis_input = f"{prompt}\nQuantum Prediction Vector: {quantum_vector}\nDecoded Data: {decoded_data}\n{json.dumps(weaviate_data)}\n{json.dumps(shared_data)}"
                 analysis_result = llm(analysis_input, max_tokens=200)['choices'][0]['text']
                 shared_data[prompt] = analysis_result
 
@@ -74,7 +91,8 @@ class BaseAgent:
                             "prompt": prompt,
                             "result": analysis_result,
                             "quantumData": json.dumps(quantum_result.tolist()),
-                            "quantumPredictionScore": quantum_pred_score
+                            "quantumPredictionVector": json.dumps(quantum_vector.tolist()),
+                            "decodedData": json.dumps(decoded_data.tolist())
                         }
                     })
 
