@@ -1,4 +1,4 @@
-# Blog Post: Unveiling the Dynamics of NFL Tackles and the Physics of Momentum Conservation
+# Unveiling the Dynamics of NFL Tackles and the Physics of Momentum Conservation
 
 # Code
 
