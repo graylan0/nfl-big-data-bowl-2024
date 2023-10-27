@@ -109,8 +109,7 @@ for round in range(learning_rounds):
         # Summarize the tackle data for this round
         tackle_data_summary = summarize_tackle_data(team_df)
 
-        # Generate a prompt for GPT-3.5 Turbo based on the quantum_data and tackle_data_summary
-        # Generate a prompt for GPT-3.5 Turbo based on the quantum_data and tackle_data_summary
+        # Generate a prompt for GPT-4 Turbo based on the quantum_data and tackle_data_summary
         messages = [
             {"role": "system", "content": system_rules},
             {"role": "system", "content": "You are a helpful assistant specialized in advanced quantum and data analysis."},
@@ -130,7 +129,7 @@ for round in range(learning_rounds):
 
         # Make the GPT-3.5 Turbo API call
         response = openai.ChatCompletion.create(
-          model="gpt-3.5-turbo",
+          model="gpt-4",
           messages=messages
         )
 
@@ -142,9 +141,9 @@ for round in range(learning_rounds):
 # Output the GPT-3.5 Turbo responses
 try:
     for i, prompt in enumerate(agent_prompts):
-        print(f"GPT-3.5 Turbo Response for Learning Round {i+1}: {prompt}")
+        print(f"GPT-4 Turbo Response for Learning Round {i+1}: {prompt}")
 except Exception as e:
-    print(f"Error printing GPT-3.5 Turbo responses: {e}")
+    print(f"Error printing GPT-4 Turbo responses: {e}")
 
 # Save the results to a Markdown file
 try:
