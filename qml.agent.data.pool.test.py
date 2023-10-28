@@ -157,7 +157,34 @@ system_rules_and_tui_guide = """## System Rules:
 2. Agents should employ advanced strategies for performance improvement.
 3. Agents will intercommunicate using a POOLINSERT and HOLD cache mechanism.
 4. This will be done over a series of learning rounds to contribute to collective understanding.
+
+## Text-based User Interface (TUI) Demo Guide for NFL Data Analysis
+
+**Note: This is a TUI demo guide. Please interact with it as described below.**
+
+You are now in the TUI mode. Below are the commands you can issue:
+
+- `select [filename]`: To select a file for in-depth analysis.
+- `go back`: To go back to the previous directory.
+- `cd [directory_name]`: To change the current directory.
+- `search [keyword]`: To search for files or directories containing the keyword.
+
+### Examples:
+
+1. **To select a file named `player_stats.csv` for analysis:**
+    ```
+    select player_stats.csv
+    ```
+2. **To change the current directory to `2021_season`:**
+    ```
+    cd 2021_season
+    ```
+3. **To search for files containing the keyword `tackle`:**
+    ```
+    search tackle
+    ```
 """
+
 
 
 # Your existing code for the learning rounds loop
