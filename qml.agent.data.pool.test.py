@@ -5,10 +5,125 @@ from pennylane import numpy as np
 import datetime
 import json
 import os
+import matplotlib.pyplot as plt
+import pyswarms as ps
+import seaborn as sns
+from llama_cpp import Llama 
 
+llm = Llama(
+  model_path="llama-2-7b-chat.ggmlv3.q8_0.bin",
+  n_gpu_layers=-1,
+  n_ctx=3900,
+)
 # Number of rounds to select
 num_selected_rounds = 5  # You can change this to 10 or any other number
+# Define the quantum device
+dev = qml.device("default.qubit", wires=4)
 
+def analyze_with_llama(agent_prompts):
+    llama_responses = []
+    for prompt in agent_prompts:
+        try:
+            # Use Llama to analyze the GPT-4 response
+            llama_response = llm(prompt)
+            llama_responses.append(llama_response)
+        except Exception as e:
+            print(f"An error occurred while using Llama to analyze the prompt: {e}")
+    return llama_responses
+
+# Define the QNN
+@qml.qnode(dev)
+def quantum_circuit(params, feature_vector):
+    qml.templates.BasicEntanglerLayers(params, wires=range(4))
+    qml.templates.MottonenStatePreparation(feature_vector, wires=range(4))
+    return [qml.expval(qml.PauliZ(i)) for i in range(4)]
+
+class GPT4:
+    @staticmethod
+    def interpret_quantum_score(quantum_score, llm):
+        # Normalize the quantum score to a range between 0 and 1
+        normalized_score = (quantum_score + 1) / 2.0  # Assuming quantum_score is between -1 and 1
+
+        # Map the normalized score to a color using a colormap (here we use a red-to-green colormap)
+        rgba_color = cm.RdYlGn(normalized_score)
+        hex_color = '#%02x%02x%02x' % (int(rgba_color[0]*255), int(rgba_color[1]*255), int(rgba_color[2]*255))
+
+        # Use the model to interpret the color code (assuming llm is your Llama model instance)
+        try:
+            detailed_prompt = (
+                "Agent, you are tasked with interpreting the following color code "
+                "which represents a quantum score. Please provide a detailed interpretation.\n"
+                f"Color Code: {hex_color}"
+            )
+            llama_response = llm(detailed_prompt, max_tokens=100)
+            interpretation = llama_response['choices'][0]['text']
+        except Exception as e:
+            interpretation = f"An error occurred while using Llama to interpret the color code: {e}"
+
+        return interpretation, hex_color
+
+
+# Define the cost function for ORCASWARM
+def orca_cost_function(params):
+    feature_vector = np.array([0.1, 0.2, 0.3, 0.4])
+    quantum_score = quantum_circuit(params.reshape((1, 4)), feature_vector)
+    interpretation, color = GPT4.interpret_quantum_score(quantum_score)
+    return -np.mean(quantum_score), interpretation, color  # Negate because PSO minimizes
+
+# Initialize ORCASWARM
+options = {'c1': 0.5, 'c2': 0.3, 'w': 0.9}
+optimizer = ps.single.GlobalBestPSO(n_particles=10, dimensions=4, options=options)
+
+# Perform optimization using ORCASWARM
+best_cost, best_params = optimizer.optimize(orca_cost_function, iters=100)
+
+# Use the best_params to get the optimized quantum score
+optimized_quantum_score, interpretation, color = orca_cost_function(best_params)
+
+# Generate heatmap
+heatmap_data = np.random.rand(4, 4)  # Replace with actual data
+sns.heatmap(heatmap_data, annot=True, fmt=".2f", cmap="coolwarm")
+plt.show()
+
+# Convert heatmap to HTML color codes
+hex_colors = sns.color_palette("coolwarm", as_cmap=True)(heatmap_data).as_hex()
+
+# Function to interface with real Llama2
+async def real_llama2_agent(heatmap_colors, historical_data):
+    try:
+        detailed_prompt = (
+            "Agent, you are tasked with analyzing the following heatmap colors. "
+            "Please adhere to the following rules and guidelines:\n"
+            "1. Provide a detailed breakdown of the color distribution.\n"
+            "2. Identify any patterns or anomalies.\n"
+            "3. Suggest potential areas for further investigation.\n"
+            "4. Cross-reference with the following historical data: {}\n"
+            "5. Summarize your findings in a concise manner.\n"
+            "Heatmap Colors: {}"
+        ).format(historical_data, heatmap_colors)
+        
+        llama2_response = await llm(detailed_prompt, max_tokens=500)
+        analyzed_text = "Real Llama2 analyzed heatmap colors based on the rules: {}".format(llama2_response['choices'][0]['text'])
+        return analyzed_text
+    except Exception as e:
+        error_message = "An error occurred while using Llama2: {}".format(e)
+        return error_message
+
+llama2_result = real_llama2_agent(hex_colors)
+print(f"Llama2 Agent Result: {llama2_result}")
+
+# Save the results for data interoperability
+result_data = {
+    'best_params': best_params.tolist(),
+    'optimized_quantum_score': optimized_quantum_score,
+    'interpretation': interpretation,
+    'color': color,
+    'heatmap_colors': hex_colors.tolist(),
+    'llama2_result': llama2_result
+}
+
+with open('orca_results.json', 'w') as f:
+    json.dump(result_data, f)
 # Function to load past learning rounds from Markdown files
 def load_past_learning_rounds(directory):
     past_rounds = []
@@ -103,12 +218,12 @@ def evolution_round(past_rounds, agent_prompts):
         print(f"An error occurred during the evolution round: {e}")
 
 # Main function
-def main():
-    data_directory = "/path/to/nfl_data/"
+async def main():
+    data_directory = "C:\\Users\\Shadow\\nfl\\data"
     nfl_data = load_nfl_data(data_directory)
 
     if nfl_data is not None:
-        selected_file = 'player_stats.csv'
+        selected_file = 'players.csv'
         if selected_file in nfl_data:
             df = nfl_data[selected_file]
             mean_speed = df['Speed'].mean()
@@ -124,14 +239,40 @@ def main():
             quantum_result = circuit(params)
             print(f"Quantum result for selected NFL data: {quantum_result}")
 
-    # Load past learning rounds
+
     # Run the Evolution Round
-    past_rounds = load_past_learning_rounds("/path/to/past/learning/rounds/")
+    past_rounds = load_past_learning_rounds("C:\\Users\\Shadow\\nfl\\learn")
     evolution_round(past_rounds, agent_prompts)
+    
+    # Analyze GPT-4 responses using Llama
+    llama_responses = analyze_with_llama(agent_prompts)
+    
+    # Output the Llama responses
+    for i, response in enumerate(llama_responses):
+        print(f"Llama Response for Learning Round {i + 1}: {response}")
     if past_rounds is not None:
         selected_past_rounds = past_rounds[:num_selected_rounds]
         for i, round_content in enumerate(selected_past_rounds):
             print(f"Content of Past Learning Round {i + 1}:\n{round_content}")
+
+    # Generate heatmap
+    heatmap_data = np.random.rand(4, 4)  # Replace with actual data
+    sns.heatmap(heatmap_data, annot=True, fmt=".2f", cmap="coolwarm")
+    
+    # Save the heatmap as an image
+    heatmap_image_path = "heatmap.png"
+    plt.savefig(heatmap_image_path)
+    plt.show()
+
+    # Convert heatmap to HTML color codes
+    hex_colors = sns.color_palette("coolwarm", as_cmap=True)(heatmap_data).as_hex()
+
+    # Use real Llama2 for heatmap analysis
+    llama2_result = await real_llama2_agent(hex_colors)
+    print(llama2_result)
+
+    # Save the results to a Markdown file
+    save_to_markdown_file(agent_prompts, heatmap_image_path)
 
 # Load API key from config.json
 try:
@@ -143,10 +284,6 @@ except Exception as e:
 
 # Define agent_prompts before running the main function
 agent_prompts = []
-
-# Run the main function
-if __name__ == "__main__":
-    main()
 
 # Main loop for learning rounds
 learning_rounds = 5  # You can change this to 10 or any other number
@@ -171,21 +308,19 @@ You are now in the TUI mode. Below are the commands you can issue:
 
 ### Examples:
 
-1. **To select a file named `player_stats.csv` for analysis:**
+1. **To inspect a file named player :**
     ```
-    select player_stats.csv
+    select players.csv
     ```
-2. **To change the current directory to `2021_season`:**
+2. **To inspect for player data `:**
     ```
-    cd 2021_season
+    select games.csv
     ```
-3. **To search for files containing the keyword `tackle`:**
+3. **To inspect for tackle data:**
     ```
-    search tackle
+    select tackles.csv
     ```
 """
-
-
 
 # Your existing code for the learning rounds loop
 for round in range(learning_rounds):
@@ -231,3 +366,7 @@ try:
     save_to_markdown_file(agent_prompts)
 except Exception as e:
     print(f"Error saving to Markdown file: {e}")
+    
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())    
