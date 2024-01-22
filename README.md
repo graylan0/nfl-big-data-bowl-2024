@@ -1,4 +1,4 @@
-# nfl-big-data-bowl-2024
+# nfl-big-data-bowl-2024 Colobit Emotional Research, use with caution
 
 ![image](https://github.com/graylan0/nfl-big-data-bowl-2024/assets/34530588/5df553f6-72ba-4171-8320-b202a900eae4)
 
